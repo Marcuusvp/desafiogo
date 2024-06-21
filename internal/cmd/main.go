@@ -217,7 +217,7 @@ func reserveSpotHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	spotNames, ok := reqBody["spots"]
-	if !ok {
+	if !ok || len(spotNames) == 0 {
 		http.Error(w, "Formato de requisição inválido", http.StatusBadRequest)
 		return
 	}
@@ -225,14 +225,29 @@ func reserveSpotHandler(w http.ResponseWriter, r *http.Request) {
 	spotsMutex.Lock()
 	defer spotsMutex.Unlock()
 
+	seen := make(map[string]bool)
 	for _, spotName := range spotNames {
+		if seen[spotName] {
+			http.Error(w, fmt.Sprintf("Você está tentando reservar mais de uma vez o Spot %s", spotName), http.StatusBadRequest)
+			return
+		}
+		seen[spotName] = true
+	}
+
+	for _, spotName := range spotNames {
+		found := false
 		for _, spot := range spots {
 			if spot.EventID == eventID && spot.Name == spotName {
+				found = true
 				if spot.Status != "available" {
 					http.Error(w, fmt.Sprintf("Spot %s já reservado", spotName), http.StatusBadRequest)
 					return
 				}
 			}
+		}
+		if !found {
+			http.Error(w, fmt.Sprintf("Spot %s não encontrado para o evento %d", spotName, eventID), http.StatusNotFound)
+			return
 		}
 	}
 
@@ -240,6 +255,7 @@ func reserveSpotHandler(w http.ResponseWriter, r *http.Request) {
 		for i, spot := range spots {
 			if spot.EventID == eventID && spot.Name == spotName {
 				spots[i].Status = "reserved"
+				break
 			}
 		}
 	}
